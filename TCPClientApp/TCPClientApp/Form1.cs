@@ -16,6 +16,14 @@ namespace TCPClientApp
 {
     public partial class Form1 : Form
     {
+        private bool hasRecived;
+
+        // 建立一个全局的临时缓冲用来接收每次接收的数据
+        private byte[] buffer;
+
+        // 新建一个枚举对象用来描述 接收的数据是文字类型还是图片类型
+        private MessageType messageType = MessageType.Word;
+
         public Form1()
         {
             InitializeComponent();
@@ -25,7 +33,7 @@ namespace TCPClientApp
         private void btn_Connect_Click(object sender, EventArgs e)
         {
             //创建负责通信的socket
-            socketSend=new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+            socketSend = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
             IPAddress ip = IPAddress.Parse(txt_IP.Text);
             IPEndPoint point = new IPEndPoint(ip, Convert.ToInt32(txt_Point.Text));
             socketSend.Connect(point);
@@ -43,36 +51,94 @@ namespace TCPClientApp
         /// </summary>
         void Recive()
         {
+            MessageType type = default;
+            this.hasRecived = false;
+            // 一开始先接收5个字节的信息  1个数据类型 4个数据长度
+            this.buffer = new byte[5];
             while (true)
             {
-                byte[] buffer = new byte[1024 * 1024 * 10];
+                // 这里每次接收数据都  new 一个新的对象 对内存开销很大 
+                // 所以用一个全局的buffer迭代接收数据 
                 int length = socketSend.Receive(buffer);
-                if (length == 0)
+                if (length == 0) break;
+                else
                 {
-                    break;
-                }
-                //表示发送的是文字消息
-                if (buffer[0]==0)
-                {               
-                    string s = Encoding.UTF8.GetString(buffer, 1, length);
-                    ShowMsg(socketSend.RemoteEndPoint.ToString() + ":" + s);
-                }
-                else if(buffer[0] == 1)
-                {
-                    SaveFileDialog sfd = new SaveFileDialog();
-                    sfd.InitialDirectory = @"C:\Users\Teagle\Desktop";
-                    sfd.Title = "请选择保存的图片";
-                    sfd.Filter = "所以文件|*.*";
-                    sfd.ShowDialog(this);//弹对话框
-
-                    string path = sfd.FileName;
-                    using (FileStream fsWrite = new FileStream(path, FileMode.OpenOrCreate, FileAccess.Write))
+                    // 一开始hasRecived == false 表示没有进入接收完成阶段
+                    if (this.hasRecived == false)
                     {
-                        fsWrite.Write(buffer, 1, length);
+                        // 解析数据包基本信息
+                        // 拿到第一个字节 转成枚举
+                        type = (MessageType)buffer[0];
+
+                        // 拿到数据包长度
+                        var recivedLength = BitConverter.ToInt32(buffer.Skip(1).ToArray(), 0);
+
+                        // 重新安装新的长度分配这个 buffer缓存
+                        this.buffer = new byte[recivedLength];
+
+                        // 置标志 可以接收正文数据了
+                        this.hasRecived = true;
                     }
-                    MessageBox.Show("保持成功");
+                    // 标志是 true 那么可以开始解析正文信息了
+                    else
+                    {
+                        // 根据之前的type标志 来确认接下来如何处理
+                        switch (type)
+                        {
+                            case MessageType.Word:
+                            {
+                                string s = Encoding.UTF8.GetString(this.buffer, 0, this.buffer.Length);
+                                ShowMsg(socketSend.RemoteEndPoint.ToString() + ":" + s);
+                                break;
+                            }
+                            case MessageType.Image:
+                            {
+                                MemoryStream ms = new MemoryStream(); //新建内存bai流du
+                                ms.Write(buffer, 0, buffer.Length); //附值
+                                pictureBox1.Image = Image.FromStream(ms); //读取zhi流中内容dao
+                                break;
+                            }
+                            default: break;
+                        }
+                        this.buffer = new byte[5];
+                        this.hasRecived = false;
+                    }
                 }
-                
+
+
+                //// 这里是结束的地方 因为如果是结束符8  说明数据传输完毕
+                //if(buffer[0]==32)
+                //{
+                //    // 直接取得第一个字符 转成枚举对象便于识别 （时间久了  谁知道 0和1 代表啥）
+                //    this.messageType  = (MessageType)this.cache[0];
+
+                //    // 首字符是识别字符 不是数据 所以扔掉  尾字符也是
+                //    this.cache.RemoveAt(0);
+                //    this.cache.Remove(this.cache.Last());
+
+                //    // 这里开始处理数据
+                //    switch (this.messageType)
+                //    {
+                //        case MessageType.Word:
+                //        {
+                //            string s = Encoding.UTF8.GetString(this.cache.ToArray(), 0, this.cache.Count);
+                //            ShowMsg(socketSend.RemoteEndPoint.ToString() + ":" + s);
+                //            break;
+                //        }
+                //        case MessageType.Image:
+                //        {
+                //            MemoryStream ms = new MemoryStream(); //新建内存bai流du
+                //            ms.Write(buffer, 0, buffer.Length); //附值
+                //            pictureBox1.Image = Image.FromStream(ms); //读取zhi流中内容dao
+                //            break;
+                //        }
+                //    }
+                //}
+                ////  如果没有读到结束符 则往缓存里放数据
+                //else
+                //{
+                //    this.cache.Add(this.buffer[0]);
+                //}
             }
         }
 
@@ -95,4 +161,12 @@ namespace TCPClientApp
             Control.CheckForIllegalCrossThreadCalls = false;
         }
     }
+
+    public enum MessageType
+    {
+        Word = 0,
+        Image = 1
+    }
+
+
 }
