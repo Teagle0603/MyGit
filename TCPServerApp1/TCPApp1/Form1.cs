@@ -37,10 +37,10 @@ namespace TCPApp1
                 th.IsBackground = true;//后台执行
                 th.Start(socketWatch);
             }
-            catch 
+            catch
             { }
 
-       
+
         }
         /// <summary>
         /// 等待客户连接，并且创建通信的socket
@@ -92,7 +92,7 @@ namespace TCPApp1
                 }
                 catch
                 { }
-                
+
             }
         }
 
@@ -112,16 +112,27 @@ namespace TCPApp1
         /// <param name="e"></param>
         private void btn_Send_Click(object sender, EventArgs e)
         {
-            string str = txtMsg.Text;
-            byte[] buffer = Encoding.UTF8.GetBytes(str);
+            // 把文本信息转成byte[] 流
+            byte[] buffer = Encoding.UTF8.GetBytes(txtMsg.Text);
+
+            // 把缓存数据的长度转成byte[] 数组发送出去 给接收端一个明确的长度信息
+            byte[] bufferLengthInfo = BitConverter.GetBytes(buffer.Length);
             List<byte> list = new List<byte>();
+
+            // 加上数据类型信息
             list.Add(0);
+
+            //  加上数据长度信息
+            list.AddRange(bufferLengthInfo);
+
+            // 最后加上数据信息本身
             list.AddRange(buffer);
-            //将泛型数组转换成数组
-            byte[] NewBuffer = list.ToArray();
+
             //给客户端发消息
-            socketSend.Send(NewBuffer);
-            ShowMsg("服务器：" + str);
+            socketSend.Send(list.ToArray());
+
+            ShowMsg($"服务器：{txtMsg.Text}");
+
             txtMsg.Clear();
         }
 
@@ -132,13 +143,13 @@ namespace TCPApp1
         /// <param name="e"></param>
         private void btnSelect_Click(object sender, EventArgs e)
         {
-            OpenFileDialog ofd = new OpenFileDialog();
-            ofd.InitialDirectory = @"C:\Users\Teagle\Desktop";//设置初始目录
-            ofd.Title = "请选择要发送的图片";
-            ofd.Filter = "所有文件|*.*";
-            ofd.ShowDialog();
-
-            txtPath.Text = ofd.FileName;
+            var ofd = new OpenFileDialog
+            {
+                InitialDirectory = Application.StartupPath,
+                Title = "请选择要发送的图片",
+                Filter = "所有文件|*.*"
+            };
+            if (ofd.ShowDialog() == DialogResult.OK) txtPath.Text = ofd.FileName;
         }
 
         private void btnSendPic_Click(object sender, EventArgs e)
@@ -147,14 +158,26 @@ namespace TCPApp1
             string path = txtPath.Text;
             using (FileStream fsRead = new FileStream(path, FileMode.Open, FileAccess.Read))
             {
+                // 分配一个较大的byte[] 缓存数组
                 byte[] buffer = new byte[1024 * 1024 * 5];
-                int Len = fsRead.Read(buffer, 0, buffer.Length);
+
+                // 把图片读到缓存里
+                int bufferLength = fsRead.Read(buffer, 0, buffer.Length);
+
+                // 新建一个动态List 添加各个数据段
                 List<byte> list = new List<byte>();
+
+                // 添加图片标识信息
                 list.Add(1);
-                list.AddRange(buffer);
-                byte[] newBuffer = list.ToArray();
-                
-                socketSend.Send(newBuffer,0,Len,SocketFlags.None);
+
+                // 添加数据长度信息
+                list.AddRange(BitConverter.GetBytes(bufferLength));
+
+                // 根据长度截取缓存 buffer对象 并添加到动态List
+                list.AddRange(buffer.Take(bufferLength));
+               
+                // 最终动态List转成 byte[] 并发送
+                socketSend.Send(list.ToArray());
             }
         }
     }
